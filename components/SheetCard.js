@@ -20,9 +20,40 @@ export default function SheetCard({ sheet, idx, engine, stockLocations, stockLoc
   const needsLocation = mapping.some((m) => m.field?.isQuantity) && schema.model === "product.template";
   const requiredFields = schema.fields.filter((f) => f.required);
   const missingRequired = requiredFields.filter((f) => !mapping.some((m) => m.field?.name === f.name));
+
+  function columnHasData(header) {
+    return sheet.rows.some((row) => row[header] !== "" && row[header] != null && String(row[header]).trim() !== "");
+  }
+
+  // A column that has real data but no field chosen (and wasn't explicitly
+  // marked "skip") blocks upload — better to ask than to silently drop data.
+  const unresolved = mapping.filter((m) => !m.field && !m.skip && columnHasData(m.header));
+
+  // Two columns mapped to the same Odoo field is almost always a mistake.
+  const fieldCounts = {};
+  mapping.forEach((m) => { if (m.field) fieldCounts[m.field.name] = (fieldCounts[m.field.name] || 0) + 1; });
+  const conflictField = Object.keys(fieldCounts).find((k) => fieldCounts[k] > 1);
+
   const blockers = [];
+  if (unresolved.length) blockers.push(`${unresolved.length} column(s) have data but no field chosen: ${unresolved.map((m) => m.header).join(", ")}`);
+  if (conflictField) blockers.push(`Multiple columns are mapped to the same field "${conflictField}" — fix one of them`);
   if (missingRequired.length) blockers.push(`Required field(s) not mapped: ${missingRequired.map((f) => f.label).join(", ")}`);
   if (needsLocation && !sheet.stockLocationId) blockers.push("Choose a location for On Hand Quantity below");
+
+  function setMapping(i, next) {
+    const newMapping = mapping.map((m, mi) => (mi === i ? next : m));
+    patch({ analysis: { ...sheet.analysis, mapping: newMapping } });
+    setUploadState(null);
+  }
+
+  function changeField(i, m, fieldName) {
+    const chosen = schema.fields.find((f) => f.name === fieldName) || null;
+    setMapping(i, { ...m, field: chosen, confidence: chosen ? 1 : 0, manual: true, skip: false });
+  }
+
+  function toggleSkip(i, m, checked) {
+    setMapping(i, { ...m, skip: checked });
+  }
 
   async function doUpload() {
     setUploadState({ status: "checking" });
@@ -42,6 +73,9 @@ export default function SheetCard({ sheet, idx, engine, stockLocations, stockLoc
           <strong>{schema.icon} {sheet.name}</strong>{" "}
           <span className="sheet-meta">→ {schema.label} · {sheet.rows.length} row(s)</span>
         </div>
+        <span className="sheet-right">
+          {mapping.filter((m) => m.field).length}/{mapping.length} mapped {blockers.length === 0 ? "✅" : "⚠️"}
+        </span>
         <span className="link-btn">{expanded ? "Collapse" : "Expand"}</span>
       </div>
 
@@ -56,25 +90,67 @@ export default function SheetCard({ sheet, idx, engine, stockLocations, stockLoc
             </select>
           </div>
           <div className="note-box">{schema.note}</div>
+          {(schema.model === "sale.order" || schema.model === "purchase.order") &&
+            !mapping.some((m) => m.field?.name === (schema.model === "sale.order" ? "client_order_ref" : "partner_ref")) && (
+              <div className="warn-box">
+                ⚠️ Order Reference isn't mapped — each row will always create a brand-new order, so re-uploading this same file later will duplicate every order instead of updating them. Map your file's order number column to Order Reference to avoid that.
+              </div>
+          )}
 
           <table className="mapping-table">
             <thead>
-              <tr><th>Your column</th><th>Maps to</th><th>Confidence</th></tr>
+              <tr><th>Your column</th><th></th><th>Maps to</th><th style={{ textAlign: "center" }}>Skip</th><th style={{ textAlign: "right" }}>Confidence</th></tr>
             </thead>
             <tbody>
-              {mapping.map((m, i) => (
-                <tr key={i}>
-                  <td>{m.header}</td>
-                  <td>{m.field ? m.field.label : <em style={{ color: "#9CA3AF" }}>not mapped</em>}</td>
-                  <td>
-                    {m.field && (
-                      <span className="confidence-pill" style={{ background: confidenceColor(m.confidence) }}>
-                        {Math.round(m.confidence * 100)}%
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {mapping.map((m, i) => {
+                const needsDecision = !m.field && !m.skip && columnHasData(m.header);
+                return (
+                  <tr key={i} className={needsDecision ? "needs-decision" : ""}>
+                    <td className="mono">{m.header}</td>
+                    <td>→</td>
+                    <td>
+                      {/* Always a real <select> — not just for unmapped columns —
+                          so a wrong auto-match can be corrected too, not only
+                          a missing one filled in. */}
+                      <select
+                        className={"field-select" + (m.field ? "" : " is-unmapped") + (needsDecision ? " needs-decision" : "")}
+                        disabled={!!m.skip}
+                        value={m.field ? m.field.name : ""}
+                        onChange={(e) => changeField(i, m, e.target.value)}
+                      >
+                        <option value="">{needsDecision ? "⚠️ choose a field..." : "— unmapped —"}</option>
+                        {schema.fields.map((f) => (
+                          <option key={f.name} value={f.name}>{f.label} ({f.name})</option>
+                        ))}
+                      </select>
+                      {m.field?.relation && <span className="rel-tag">relation</span>}
+                    </td>
+                    <td style={{ textAlign: "center" }}>
+                      {/* Explicit "skip this column" checkbox — lets the user
+                          consciously say "ignore this", rather than leaving
+                          a column with data stuck in limbo. */}
+                      <input
+                        type="checkbox"
+                        checked={!!m.skip}
+                        disabled={!!m.field}
+                        title="Ignore this column during upload"
+                        onChange={(e) => toggleSkip(i, m, e.target.checked)}
+                      />
+                    </td>
+                    <td className="conf" style={{ textAlign: "right" }}>
+                      {m.skip ? (
+                        <span style={{ color: "#9ca3af" }}>skipped</span>
+                      ) : m.manual ? (
+                        <span style={{ color: "#534AB7" }}>manual</span>
+                      ) : (
+                        <span className="confidence-pill" style={{ background: confidenceColor(m.confidence) }}>
+                          {Math.round(m.confidence * 100)}%
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
 
