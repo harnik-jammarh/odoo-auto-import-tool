@@ -157,6 +157,7 @@ export default function Dashboard() {
           <button className="link-btn" onClick={() => setView(view === "main" ? "databases" : "main")}>
             {view === "main" ? "Databases" : "Close"}
           </button>
+          <button className="link-btn" onClick={() => router.push("/profile")}>My Profile</button>
           <button className="link-btn" onClick={signOut}>Sign Out</button>
         </div>
       </div>
