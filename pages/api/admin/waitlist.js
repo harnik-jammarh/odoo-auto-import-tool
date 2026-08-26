@@ -1,71 +1,43 @@
-import supabaseAdmin, { verifyUser } from "../../../lib/supabaseAdmin";
+import supabaseAdmin from "../../../lib/supabaseAdmin";
 
-// Only the account whose email matches ADMIN_EMAIL (set in your environment
-// variables, never in client code) can list or decide on waitlist requests.
-// Everyone else — including other signed-in users — gets a 403 here.
-async function requireAdmin(req) {
-  const user = await verifyUser(req);
-  if (!user) return { error: 401, message: "Not signed in" };
-  const adminEmail = (process.env.ADMIN_EMAIL || "").trim().toLowerCase();
-  if (!adminEmail || (user.email || "").toLowerCase() !== adminEmail) {
-    return { error: 403, message: "Not authorized" };
-  }
-  return { user };
-}
-
+// POST -> anyone can submit an email to request access. This does NOT touch
+// Supabase Auth at all — it only inserts a "pending" row here. No Auth user
+// (and no login ability) exists until the admin approves the request from
+// /admin/waitlist, which is the only thing that actually calls
+// supabaseAdmin.auth.admin.inviteUserByEmail().
 export default async function handler(req, res) {
-  const check = await requireAdmin(req);
-  if (check.error) { res.status(check.error).json({ error: check.message }); return; }
+  if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
 
-  if (req.method === "GET") {
-    const { data, error } = await supabaseAdmin
-      .from("waitlist_requests")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) { res.status(500).json({ error: error.message }); return; }
-    res.status(200).json({ requests: data });
+  const { email, note } = req.body || {};
+  if (!email || typeof email !== "string" || !/^\S+@\S+\.\S+$/.test(email)) {
+    res.status(400).json({ error: "A valid email is required" });
     return;
   }
+  const cleanEmail = email.trim().toLowerCase();
 
-  if (req.method === "POST") {
-    const { id, action } = req.body || {}; // action: "approve" | "reject"
-    if (!id || !["approve", "reject"].includes(action)) {
-      res.status(400).json({ error: "id and a valid action are required" });
-      return;
-    }
-    const { data: reqRow, error: fetchErr } = await supabaseAdmin
-      .from("waitlist_requests")
-      .select("*")
-      .eq("id", id)
-      .single();
-    if (fetchErr || !reqRow) { res.status(404).json({ error: "Request not found" }); return; }
+  const { data: existing } = await supabaseAdmin
+    .from("waitlist_requests")
+    .select("id, status")
+    .eq("email", cleanEmail)
+    .maybeSingle();
 
-    if (action === "reject") {
-      const { error } = await supabaseAdmin
-        .from("waitlist_requests")
-        .update({ status: "rejected", decided_at: new Date().toISOString() })
-        .eq("id", id);
-      if (error) { res.status(500).json({ error: error.message }); return; }
-      res.status(200).json({ ok: true });
-      return;
-    }
-
-    // Approve: this is the ONLY place a Supabase Auth user gets created for
-    // a new signup. inviteUserByEmail creates the account and emails the
-    // person a link to set their own password — we never see or store it.
-    const { error: inviteErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(reqRow.email);
-    if (inviteErr && !/already registered|already exists/i.test(inviteErr.message || "")) {
-      res.status(500).json({ error: inviteErr.message });
-      return;
-    }
+  if (existing) {
+    if (existing.status === "pending") { res.status(200).json({ ok: true, message: "You're already on the waitlist — hang tight." }); return; }
+    if (existing.status === "approved") { res.status(200).json({ ok: true, message: "You're already approved — check your email for the invite, or just sign in." }); return; }
+    // previously rejected: allow a fresh request by resetting it to pending
     const { error } = await supabaseAdmin
       .from("waitlist_requests")
-      .update({ status: "approved", decided_at: new Date().toISOString() })
-      .eq("id", id);
+      .update({ status: "pending", note: note || null, decided_at: null })
+      .eq("id", existing.id);
     if (error) { res.status(500).json({ error: error.message }); return; }
-    res.status(200).json({ ok: true });
+    res.status(200).json({ ok: true, message: "Request received — you'll get an email once you're approved." });
     return;
   }
 
-  res.status(405).json({ error: "Method not allowed" });
+  const { error } = await supabaseAdmin
+    .from("waitlist_requests")
+    .insert({ email: cleanEmail, note: note || null, status: "pending" });
+  if (error) { res.status(500).json({ error: error.message }); return; }
+
+  res.status(200).json({ ok: true, message: "Request received — you'll get an email once you're approved." });
 }
