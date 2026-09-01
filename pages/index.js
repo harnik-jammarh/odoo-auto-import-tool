@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../lib/supabaseClient";
+import Header from "../components/Header";
 
 const STEPS = [
   {
@@ -39,18 +40,7 @@ export default function Home() {
 
   return (
     <div className="page">
-      <div className="header-row">
-        <div className="logo">O</div>
-        <h1>Odoo Auto-Import</h1>
-      </div>
-      <p className="subtitle">Excel/CSV uploads straight into Odoo, from anywhere — no extension to install.</p>
-
-      <div className="top-row">
-        <div />
-        <button className="btn btn-primary" onClick={() => router.push(session ? "/dashboard" : "/login")}>
-          {session ? "Go to Dashboard" : "Sign In / Request Access"}
-        </button>
-      </div>
+      <Header session={session} active="home" />
 
       <h3>Getting started</h3>
       <div className="db-list">

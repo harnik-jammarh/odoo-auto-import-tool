@@ -12,6 +12,7 @@ create table if not exists saved_connections (
   api_key_encrypted text not null,   -- AES-256-GCM encrypted, never plaintext
   drive_api_key_encrypted text,      -- optional, same AES-256-GCM encryption; only needed for Inventory's Extra Images Drive-FOLDER-link expansion
   auto_create_safe boolean not null default true,
+  api_key_expires_at timestamptz,     -- null = persistent key (never expires)
   created_at timestamptz not null default now()
 );
 
@@ -21,6 +22,7 @@ create table if not exists saved_connections (
 -- (safe to run every time this whole file is re-run, including on a brand
 -- new table where the column above already exists).
 alter table saved_connections add column if not exists drive_api_key_encrypted text;
+alter table saved_connections add column if not exists api_key_expires_at timestamptz;
 
 -- Row Level Security: turn it on, then only allow a user to see/change
 -- rows where user_id matches their own logged-in id. Even if two people

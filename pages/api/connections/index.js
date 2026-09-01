@@ -25,6 +25,7 @@ export default async function handler(req, res) {
       db: row.db,
       username: row.username,
       autoCreateSafe: row.auto_create_safe,
+      apiKeyExpiresAt: row.api_key_expires_at,
       apiKey: safeDecrypt(row.api_key_encrypted),
       driveApiKey: row.drive_api_key_encrypted ? safeDecrypt(row.drive_api_key_encrypted) : "",
     }));
@@ -33,22 +34,23 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "POST") {
-    const { label, url, db, username, apiKey, driveApiKey, autoCreateSafe } = req.body || {};
-    if (!label || !url || !db || !username || !apiKey) {
-      res.status(400).json({ error: "label, url, db, username and apiKey are all required" });
+    const { url, db, username, apiKey, driveApiKey, autoCreateSafe, apiKeyExpiresAt } = req.body || {};
+    if (!url || !db || !username || !apiKey) {
+      res.status(400).json({ error: "url, db, username and apiKey are all required" });
       return;
     }
     const { data, error } = await supabaseAdmin
       .from("saved_connections")
       .insert({
         user_id: user.id,
-        label,
+        label: db, // label mirrors the database name — no separate field needed
         url,
         db,
         username,
         api_key_encrypted: encryptSecret(apiKey),
         drive_api_key_encrypted: driveApiKey ? encryptSecret(driveApiKey) : null,
         auto_create_safe: autoCreateSafe !== false,
+        api_key_expires_at: apiKeyExpiresAt || null,
       })
       .select()
       .single();

@@ -19,8 +19,8 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "PUT") {
-    const { label, url, db, username, apiKey, driveApiKey, autoCreateSafe } = req.body || {};
-    const updates = { label, url, db, username, auto_create_safe: autoCreateSafe !== false };
+    const { url, db, username, apiKey, driveApiKey, autoCreateSafe, apiKeyExpiresAt } = req.body || {};
+    const updates = { label: db, url, db, username, auto_create_safe: autoCreateSafe !== false, api_key_expires_at: apiKeyExpiresAt || null };
     if (apiKey) updates.api_key_encrypted = encryptSecret(apiKey);
     if (driveApiKey) updates.drive_api_key_encrypted = encryptSecret(driveApiKey);
     const { error } = await supabaseAdmin.from("saved_connections").update(updates).eq("id", id);

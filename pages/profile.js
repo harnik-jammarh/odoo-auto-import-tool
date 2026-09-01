@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../lib/supabaseClient";
+import Header from "../components/Header";
 
 export default function Profile() {
   const router = useRouter();
@@ -44,16 +45,8 @@ export default function Profile() {
 
   return (
     <div className="page">
-      <div className="header-row">
-        <div className="logo">O</div>
-        <h1>Odoo Auto-Import</h1>
-      </div>
+      <Header session={session} active="profile" />
       <p className="subtitle">My Profile</p>
-
-      <div className="top-row">
-        <div />
-        <button className="link-btn" onClick={() => router.push("/dashboard")}>← Back to Dashboard</button>
-      </div>
 
       <div className="card">
         <div className="field">

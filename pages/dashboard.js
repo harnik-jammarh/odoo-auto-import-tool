@@ -4,6 +4,8 @@ import { supabase } from "../lib/supabaseClient";
 import { createEngine, parseWorkbookFile } from "../lib/odooEngine";
 import ConnectionForm from "../components/ConnectionForm";
 import SheetCard from "../components/SheetCard";
+import Header from "../components/Header";
+import { isExpired, expiryLabel } from "../lib/apiExpiry";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -61,11 +63,6 @@ export default function Dashboard() {
     if (session) loadConnections();
   }, [session, loadConnections]);
 
-  async function signOut() {
-    await supabase.auth.signOut();
-    router.replace("/login");
-  }
-
   // ---- connection management -------------------------------------------
   async function saveConnection(form) {
     if (editingConn?.id) {
@@ -99,6 +96,7 @@ export default function Dashboard() {
 
   async function checkConn(eng, conn) {
     setConnectionStatus("unknown");
+    if (isExpired(conn.apiKeyExpiresAt)) { setConnectionStatus("expired"); return; }
     if (!conn.url || !conn.db || !conn.username || !conn.apiKey) { setConnectionStatus("offline"); return; }
     const ok = await eng.checkConnection();
     setConnectionStatus(ok ? "online" : "offline");
@@ -147,40 +145,32 @@ export default function Dashboard() {
 
   return (
     <div className="page">
-      <div className="header-row">
-        <div className="logo">O</div>
-        <h1>Odoo Auto-Import</h1>
-      </div>
-      <p className="subtitle">Excel/CSV uploads straight into Odoo, from anywhere — no extension to install.</p>
+      <Header session={session} active="databases" />
 
-      <div className="top-row">
-        <div className="status-row">
-          {view === "main" && (
-            <>
-              <span className={`dot ${connectionStatus}`} />
-              <span>
-                {connectionStatus === "online" ? `Connected — ${activeConn?.label}` : connectionStatus === "offline" ? "Not connected" : "Checking..."}
-              </span>
-              {connectionStatus === "online" && customFieldsStatus === "loading" && (
-                <span className="sheet-meta" style={{ marginLeft: 10 }}>· checking for custom fields...</span>
-              )}
-              {connectionStatus === "online" && customFieldsStatus === "done" && (
-                <span className="sheet-meta" style={{ marginLeft: 10 }}>· custom fields loaded</span>
-              )}
-              {connectionStatus === "online" && customFieldsStatus === "error" && (
-                <span className="sheet-meta" style={{ marginLeft: 10, color: "#b91c1c" }}>· custom field check failed</span>
-              )}
-            </>
+      {view === "main" && (
+        <div className="status-row" style={{ marginBottom: 14 }}>
+          <button className="link-btn" onClick={() => setView("databases")}>← My Databases</button>
+          <span className={`dot ${connectionStatus}`} style={{ marginLeft: 10 }} />
+          <span>
+            {connectionStatus === "online"
+              ? `Connected — ${activeConn?.db}`
+              : connectionStatus === "expired"
+              ? "API key expired — connection broken. Edit this database to generate a new key."
+              : connectionStatus === "offline"
+              ? "Not connected"
+              : "Checking..."}
+          </span>
+          {connectionStatus === "online" && customFieldsStatus === "loading" && (
+            <span className="sheet-meta" style={{ marginLeft: 10 }}>· checking for custom fields...</span>
+          )}
+          {connectionStatus === "online" && customFieldsStatus === "done" && (
+            <span className="sheet-meta" style={{ marginLeft: 10 }}>· custom fields loaded</span>
+          )}
+          {connectionStatus === "online" && customFieldsStatus === "error" && (
+            <span className="sheet-meta" style={{ marginLeft: 10, color: "#b91c1c" }}>· custom field check failed</span>
           )}
         </div>
-        <div style={{ display: "flex", gap: 14 }}>
-          <button className="link-btn" onClick={() => setView(view === "main" ? "databases" : "main")}>
-            {view === "main" ? "Databases" : "Close"}
-          </button>
-          <button className="link-btn" onClick={() => router.push("/profile")}>My Profile</button>
-          <button className="link-btn" onClick={signOut}>Sign Out</button>
-        </div>
-      </div>
+      )}
 
       {loadError && <div className="error-box">{loadError}</div>}
 
@@ -260,18 +250,25 @@ function DatabasesList({ connections, activeId, onAdd, onEdit, onActivate, onDel
     <div>
       <button className="btn btn-primary" onClick={onAdd}>+ New Database</button>
       <div className="db-list">
-        {connections.map((c) => (
-          <div key={c.id} className={`db-item ${c.id === activeId ? "active" : ""}`}>
-            <div className="db-item-main" onClick={() => onActivate(c)}>
-              <div className="db-item-label">{c.label}</div>
-              <div className="db-item-sub">{c.db} · {c.username}</div>
+        {connections.map((c) => {
+          const expired = isExpired(c.apiKeyExpiresAt);
+          return (
+            <div key={c.id} className={`db-item ${c.id === activeId ? "active" : ""}`}>
+              <div className="db-item-main" onClick={() => onActivate(c)}>
+                <div className="db-item-label">
+                  {c.db}
+                  {expired && <span className="expired-badge">API EXPIRED</span>}
+                </div>
+                <div className="db-item-sub">{c.url} · {c.username}</div>
+                <div className="expiry-note">{expiryLabel(c.apiKeyExpiresAt)}</div>
+              </div>
+              <div className="db-item-actions">
+                <button className="btn btn-secondary" onClick={() => onEdit(c)}>Edit</button>
+                <button className="btn btn-danger" onClick={() => onDelete(c.id)}>Delete</button>
+              </div>
             </div>
-            <div className="db-item-actions">
-              <button className="btn btn-secondary" onClick={() => onEdit(c)}>Edit</button>
-              <button className="btn btn-danger" onClick={() => onDelete(c.id)}>Delete</button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       {!connections.length && <p className="subtitle">No databases saved yet — add one to get started.</p>}
     </div>

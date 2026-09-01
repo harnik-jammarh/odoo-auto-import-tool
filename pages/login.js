@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../lib/supabaseClient";
+import Header from "../components/Header";
 
 export default function Login() {
   const router = useRouter();
@@ -51,10 +52,7 @@ export default function Login() {
   return (
     <div className="page">
       <div className="auth-wrap">
-        <div className="header-row">
-          <div className="logo">O</div>
-          <h1>Odoo Auto-Import</h1>
-        </div>
+        <Header session={undefined} active="login" />
         <p className="subtitle">Sign in to access your saved databases.</p>
 
         <div className="auth-tabs">
