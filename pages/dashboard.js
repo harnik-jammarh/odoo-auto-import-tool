@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../lib/supabaseClient";
-import { createEngine, parseWorkbookFile } from "../lib/odooEngine";
+import { createEngine, parseWorkbookFile, importGoogleSheet } from "../lib/odooEngine";
 import ConnectionForm from "../components/ConnectionForm";
 import SheetCard from "../components/SheetCard";
 import Header from "../components/Header";
@@ -27,6 +27,9 @@ export default function Dashboard() {
   const [dragOver, setDragOver] = useState(false);
   const [loadError, setLoadError] = useState("");
   const fileInputRef = useRef(null);
+  const [googleSheetUrl, setGoogleSheetUrl] = useState("");
+  const [googleSheetError, setGoogleSheetError] = useState(null);
+  const [googleSheetLoading, setGoogleSheetLoading] = useState(false);
 
   // ---- auth guard -----------------------------------------------------
   useEffect(() => {
@@ -131,9 +134,27 @@ export default function Dashboard() {
     }
   }
 
+  async function handleGoogleSheetImport() {
+    if (googleSheetLoading) return;
+    setGoogleSheetLoading(true);
+    setGoogleSheetError(null);
+    try {
+      const { sheets: built, fileName: gsName } = await importGoogleSheet(googleSheetUrl);
+      setFileName(gsName);
+      setSheets(built);
+      setGoogleSheetUrl("");
+    } catch (e) {
+      setGoogleSheetError(e.message || String(e));
+    } finally {
+      setGoogleSheetLoading(false);
+    }
+  }
+
   function resetFile() {
     setSheets([]);
     setFileName("");
+    setGoogleSheetUrl("");
+    setGoogleSheetError(null);
   }
 
   function updateSheet(idx, updated) {
@@ -213,6 +234,27 @@ export default function Dashboard() {
                 style={{ display: "none" }}
                 onChange={(e) => handleFile(e.target.files[0])}
               />
+            </div>
+          )}
+
+          {connectionStatus === "online" && !sheets.length && (
+            <div className="google-sheet-import">
+              <div className="or-divider">or</div>
+              <div className="sub">Import from a Google Sheet (must be shared as "Anyone with the link")</div>
+              <div className="google-sheet-row">
+                <input
+                  type="text"
+                  placeholder="Paste the Google Sheets URL..."
+                  value={googleSheetUrl}
+                  onChange={(e) => setGoogleSheetUrl(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !googleSheetLoading) handleGoogleSheetImport(); }}
+                />
+                <button className="btn btn-secondary" disabled={googleSheetLoading} onClick={handleGoogleSheetImport}>
+                  {googleSheetLoading ? "Fetching..." : "Import"}
+                </button>
+              </div>
+              {googleSheetError && <div className="error-box">{googleSheetError}</div>}
+              <div className="note-box">Only the tab the link points to (its gid) comes in — for a multi-tab workbook, open each tab in Google Sheets first (its URL's gid changes per tab), then import them one at a time.</div>
             </div>
           )}
 

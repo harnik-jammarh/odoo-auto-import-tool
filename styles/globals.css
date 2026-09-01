@@ -50,6 +50,11 @@ label { font-size: 13px; font-weight: 600; color: #374151; display: block; margi
 
 .dropzone { border: 2px dashed #D1D5DB; border-radius: 10px; padding: 40px 20px; text-align: center; color: #6B7280; background: white; }
 .dropzone.drag { border-color: #714B67; background: #FBF7FA; }
+.google-sheet-import { margin-top: 12px; }
+.google-sheet-import .or-divider { text-align: center; font-size: 11px; color: #9CA3AF; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+.google-sheet-import .sub { font-size: 12px; color: #6B7280; margin-bottom: 6px; }
+.google-sheet-row { display: flex; gap: 6px; }
+.google-sheet-row input[type="text"] { flex: 1; padding: 7px 9px; border: 1px solid #D1D5DB; border-radius: 7px; font-size: 12.5px; }
 .file-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 14px; }
 
 .sheet-card { background: white; border: 1px solid #E5E7EB; border-radius: 10px; margin-bottom: 14px; overflow: hidden; }

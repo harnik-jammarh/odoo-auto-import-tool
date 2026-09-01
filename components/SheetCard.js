@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { ODOO_SCHEMAS, mapForModule, confidenceColor } from "../lib/odooEngine";
+import { ODOO_SCHEMAS, mapForModule, confidenceColor, ACCOUNT_TYPE_LABELS } from "../lib/odooEngine";
 
 export default function SheetCard({ sheet, idx, engine, stockLocations, stockLocationsLoading, journals, journalsLoading, onChange }) {
   const [expanded, setExpanded] = useState(true);
   const [uploadState, setUploadState] = useState(null);
+  const [accountTypeSelections, setAccountTypeSelections] = useState({});
 
   const schema = ODOO_SCHEMAS[sheet.analysis.moduleKey];
   const mapping = sheet.analysis.mapping;
@@ -63,6 +64,18 @@ export default function SheetCard({ sheet, idx, engine, stockLocations, stockLoc
 
   function confirmCreateAndContinue() {
     patch({ autoCreateProducts: true });
+    setTimeout(doUpload, 0);
+  }
+
+  function confirmAccountTypesAndContinue() {
+    const missing = uploadState?.missingAccounts || [];
+    const choices = {};
+    missing.forEach((a) => {
+      const key = a.name.toLowerCase();
+      choices[key] = accountTypeSelections[key] || a.suggested;
+    });
+    patch({ accountTypeChoices: choices });
+    setAccountTypeSelections({});
     setTimeout(doUpload, 0);
   }
 
@@ -239,11 +252,11 @@ export default function SheetCard({ sheet, idx, engine, stockLocations, stockLoc
           <div className="actions-row">
             <button
               className="btn btn-primary"
-              disabled={blockers.length > 0 || uploadState?.status === "uploading" || uploadState?.status === "checking" || uploadState?.status === "confirm-create"}
+              disabled={blockers.length > 0 || uploadState?.status === "uploading" || uploadState?.status === "checking" || uploadState?.status === "confirm-create" || uploadState?.status === "confirm-account-type"}
               onClick={doUpload}
             >
               {uploadState?.status === "uploading" ? `Uploading ${uploadState.progress}/${uploadState.total}...`
-                : uploadState?.status === "checking" ? "Checking products..."
+                : uploadState?.status === "checking" ? "Checking..."
                 : "Upload to Odoo"}
             </button>
           </div>
@@ -261,6 +274,46 @@ export default function SheetCard({ sheet, idx, engine, stockLocations, stockLoc
                 <button className="btn btn-secondary" onClick={() => setUploadState(null)}>Cancel — I'll create/fix them in Odoo first</button>
               </div>
               <div className="note-box">Products created this way are Goods, no sales/purchase tax, tracking off, price = 0 — plain placeholders. Review each one afterward (a later import can update them again once you've set them up).</div>
+            </>
+          )}
+
+          {uploadState?.status === "confirm-account-type" && (
+            <>
+              <div className="warn-box">
+                This sheet references {uploadState.missingAccounts.length} account(s) that don't exist in your Chart of Accounts yet. Pick the type for each — a starting guess is pre-selected based on which side (Debit/Credit) the amount is on and keywords in the name:
+                <table className="mapping-table" style={{ marginTop: 8 }}>
+                  <thead>
+                    <tr><th>Account name</th><th>Type</th></tr>
+                  </thead>
+                  <tbody>
+                    {uploadState.missingAccounts.map((a) => {
+                      const key = a.name.toLowerCase();
+                      const value = accountTypeSelections[key] || a.suggested;
+                      return (
+                        <tr key={key}>
+                          <td className="mono">{a.name}</td>
+                          <td>
+                            <select
+                              className="field-select"
+                              value={value}
+                              onChange={(e) => setAccountTypeSelections((prev) => ({ ...prev, [key]: e.target.value }))}
+                            >
+                              {Object.entries(ACCOUNT_TYPE_LABELS).map(([code, label]) => (
+                                <option key={code} value={code}>{label}</option>
+                              ))}
+                            </select>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="actions-row">
+                <button className="btn btn-primary" onClick={confirmAccountTypesAndContinue}>Create with these types & continue</button>
+                <button className="btn btn-secondary" onClick={() => { setUploadState(null); setAccountTypeSelections({}); }}>Cancel — I'll create/fix them in Odoo first</button>
+              </div>
+              <div className="note-box">These accounts are created with the type you pick here, a fresh unused code, and no other setup (no default taxes, no reconciliation flags beyond what the type implies) — review each one in Chart of Accounts afterward.</div>
             </>
           )}
 
