@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 export default function ConnectionForm({ initial, onSave, onCancel }) {
-  const [form, setForm] = useState(initial || { label: "", url: "", db: "", username: "", apiKey: "", autoCreateSafe: true });
+  const [form, setForm] = useState(initial || { label: "", url: "", db: "", username: "", apiKey: "", driveApiKey: "", autoCreateSafe: true });
   const [busy, setBusy] = useState(false);
   const isEdit = !!initial?.id;
 
@@ -35,6 +35,10 @@ export default function ConnectionForm({ initial, onSave, onCancel }) {
       <div className="field">
         <label>API Key {isEdit && "(leave blank to keep the current one)"}</label>
         <input type="password" required={!isEdit} value={form.apiKey} onChange={(e) => set("apiKey", e.target.value)} />
+      </div>
+      <div className="field">
+        <label>Google Drive API Key (optional — only needed to expand Drive FOLDER links into every image inside, for Inventory's Extra Images column)</label>
+        <input type="password" value={form.driveApiKey || ""} onChange={(e) => set("driveApiKey", e.target.value)} placeholder={isEdit ? "leave blank to keep the current one" : "leave blank if you won't be importing Drive folders"} />
       </div>
       <div className="checkbox-row">
         <input type="checkbox" checked={form.autoCreateSafe !== false} onChange={(e) => set("autoCreateSafe", e.target.checked)} />

@@ -16,6 +16,9 @@ export default function Dashboard() {
   const [connectionStatus, setConnectionStatus] = useState("unknown");
   const [stockLocations, setStockLocations] = useState([]);
   const [stockLocationsLoading, setStockLocationsLoading] = useState(false);
+  const [journals, setJournals] = useState([]);
+  const [journalsLoading, setJournalsLoading] = useState(false);
+  const [customFieldsStatus, setCustomFieldsStatus] = useState("idle"); // idle | loading | done
   const [sheets, setSheets] = useState([]);
   const [fileName, setFileName] = useState("");
   const [processing, setProcessing] = useState(false);
@@ -104,6 +107,14 @@ export default function Dashboard() {
       const locs = await eng.loadStockLocations();
       setStockLocations(locs);
       setStockLocationsLoading(false);
+
+      setJournalsLoading(true);
+      eng.loadJournals().then(setJournals).catch(() => setJournals([])).finally(() => setJournalsLoading(false));
+
+      setCustomFieldsStatus("loading");
+      eng.refreshCustomFields()
+        .then((foundAny) => setCustomFieldsStatus(foundAny ? "done" : "idle"))
+        .catch(() => setCustomFieldsStatus("error"));
     }
   }
 
@@ -150,6 +161,15 @@ export default function Dashboard() {
               <span>
                 {connectionStatus === "online" ? `Connected — ${activeConn?.label}` : connectionStatus === "offline" ? "Not connected" : "Checking..."}
               </span>
+              {connectionStatus === "online" && customFieldsStatus === "loading" && (
+                <span className="sheet-meta" style={{ marginLeft: 10 }}>· checking for custom fields...</span>
+              )}
+              {connectionStatus === "online" && customFieldsStatus === "done" && (
+                <span className="sheet-meta" style={{ marginLeft: 10 }}>· custom fields loaded</span>
+              )}
+              {connectionStatus === "online" && customFieldsStatus === "error" && (
+                <span className="sheet-meta" style={{ marginLeft: 10, color: "#b91c1c" }}>· custom field check failed</span>
+              )}
             </>
           )}
         </div>
@@ -222,6 +242,8 @@ export default function Dashboard() {
                   engine={engine}
                   stockLocations={stockLocations}
                   stockLocationsLoading={stockLocationsLoading}
+                  journals={journals}
+                  journalsLoading={journalsLoading}
                   onChange={updateSheet}
                 />
               ))}

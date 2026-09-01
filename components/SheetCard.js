@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ODOO_SCHEMAS, mapForModule, confidenceColor } from "../lib/odooEngine";
 
-export default function SheetCard({ sheet, idx, engine, stockLocations, stockLocationsLoading, onChange }) {
+export default function SheetCard({ sheet, idx, engine, stockLocations, stockLocationsLoading, journals, journalsLoading, onChange }) {
   const [expanded, setExpanded] = useState(true);
   const [uploadState, setUploadState] = useState(null);
 
@@ -176,6 +176,29 @@ export default function SheetCard({ sheet, idx, engine, stockLocations, stockLoc
                 )}
               </div>
               <div className="note-box">All On Hand Quantity values in this sheet will be set at the location chosen above — this replaces that product's counted quantity there, it does not add to existing stock elsewhere.</div>
+            </>
+          )}
+
+          {schema.isExpenseJv && (
+            <>
+              <div className="module-row">
+                <label className="module-label">Journal (optional):</label>
+                {journalsLoading ? (
+                  <span className="sheet-meta">Loading journals...</span>
+                ) : (
+                  <select
+                    className="module-select"
+                    value={sheet.expenseJvJournalId || ""}
+                    onChange={(e) => patch({ expenseJvJournalId: e.target.value ? Number(e.target.value) : null })}
+                  >
+                    <option value="">— auto-detect the Miscellaneous/General journal —</option>
+                    {(journals || []).map((j) => (
+                      <option key={j.id} value={j.id}>{j.name}{j.code ? ` (${j.code})` : ""} — {j.type}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <div className="note-box">Leave this on auto-detect unless your database has more than one Miscellaneous/General journal and the import reports that as ambiguous — then pick the right one here explicitly.</div>
             </>
           )}
 

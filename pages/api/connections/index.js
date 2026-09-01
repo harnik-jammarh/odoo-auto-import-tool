@@ -26,13 +26,14 @@ export default async function handler(req, res) {
       username: row.username,
       autoCreateSafe: row.auto_create_safe,
       apiKey: safeDecrypt(row.api_key_encrypted),
+      driveApiKey: row.drive_api_key_encrypted ? safeDecrypt(row.drive_api_key_encrypted) : "",
     }));
     res.status(200).json({ connections });
     return;
   }
 
   if (req.method === "POST") {
-    const { label, url, db, username, apiKey, autoCreateSafe } = req.body || {};
+    const { label, url, db, username, apiKey, driveApiKey, autoCreateSafe } = req.body || {};
     if (!label || !url || !db || !username || !apiKey) {
       res.status(400).json({ error: "label, url, db, username and apiKey are all required" });
       return;
@@ -46,6 +47,7 @@ export default async function handler(req, res) {
         db,
         username,
         api_key_encrypted: encryptSecret(apiKey),
+        drive_api_key_encrypted: driveApiKey ? encryptSecret(driveApiKey) : null,
         auto_create_safe: autoCreateSafe !== false,
       })
       .select()
