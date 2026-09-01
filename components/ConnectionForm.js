@@ -8,22 +8,32 @@ function toDatetimeLocal(iso) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export default function ConnectionForm({ initial, onSave, onCancel }) {
+export default function ConnectionForm({ initial, onSave, onSaved, onCancel }) {
   const [form, setForm] = useState(initial || { url: "", db: "", username: "", apiKey: "", driveApiKey: "", autoCreateSafe: true, apiKeyExpiresAt: null });
   const [expiryOption, setExpiryOption] = useState(initial?.apiKeyExpiresAt ? "Custom Date" : initial ? "Persistent Key" : "1 Month");
   const [customDate, setCustomDate] = useState(toDatetimeLocal(initial?.apiKeyExpiresAt));
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
   const isEdit = !!initial?.id;
 
   function set(field, value) { setForm((f) => ({ ...f, [field]: value })); }
 
   async function submit(e) {
     e.preventDefault();
+    setError("");
+    setSaved(false);
     setBusy(true);
     try {
       const apiKeyExpiresAt = computeExpiryFromOption(expiryOption, customDate);
-      await onSave({ ...form, label: form.db, apiKeyExpiresAt });
-    } finally {
+      const savedConn = await onSave({ ...form, label: form.db, apiKeyExpiresAt });
+      setSaved(true);
+      setBusy(false);
+      // Let the success message show briefly before handing off to the parent
+      // to navigate to the database connection screen.
+      setTimeout(() => onSaved && onSaved(savedConn), 900);
+    } catch (err) {
+      setError(err?.message || "Something went wrong while saving. Please try again.");
       setBusy(false);
     }
   }
@@ -67,9 +77,14 @@ export default function ConnectionForm({ initial, onSave, onCancel }) {
         <input type="checkbox" checked={form.autoCreateSafe !== false} onChange={(e) => set("autoCreateSafe", e.target.checked)} />
         <label>Allow auto-creating missing categories/tags/vendors while importing</label>
       </div>
+      {error && <div className="error-box">{error}</div>}
+      {saved && <div className="success-box">✓ Saved changes successfully — connecting...</div>}
+
       <div className="actions-row">
-        <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? "Saving..." : "Save & Connect"}</button>
-        <button className="btn btn-secondary" type="button" onClick={onCancel}>Cancel</button>
+        <button className="btn btn-primary" type="submit" disabled={busy || saved}>
+          {busy ? "Saving..." : saved ? "Saved ✓" : "Save & Connect"}
+        </button>
+        <button className="btn btn-secondary" type="button" onClick={onCancel} disabled={busy || saved}>Cancel</button>
       </div>
     </form>
   );

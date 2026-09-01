@@ -67,16 +67,23 @@ export default function Dashboard() {
   }, [session, loadConnections]);
 
   // ---- connection management -------------------------------------------
+  // Saves the connection and returns the resulting record. Does NOT navigate —
+  // that happens separately (via handleSaved) once the form has had a chance
+  // to show a success confirmation.
   async function saveConnection(form) {
     if (editingConn?.id) {
       await authedFetch(`/api/connections/${editingConn.id}`, { method: "PUT", body: JSON.stringify(form) });
       await loadConnections();
-      activateConnection({ ...editingConn, ...form });
+      return { ...editingConn, ...form };
     } else {
       const { id } = await authedFetch("/api/connections", { method: "POST", body: JSON.stringify(form) });
       await loadConnections();
-      activateConnection({ id, ...form });
+      return { id, ...form };
     }
+  }
+
+  function handleSaved(conn) {
+    activateConnection(conn);
   }
 
   async function deleteConnection(id) {
@@ -210,6 +217,7 @@ export default function Dashboard() {
         <ConnectionForm
           initial={editingConn}
           onSave={saveConnection}
+          onSaved={handleSaved}
           onCancel={() => setView(editingConn ? "main" : "databases")}
         />
       )}
