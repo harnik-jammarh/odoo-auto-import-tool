@@ -4,6 +4,8 @@ import { ODOO_SCHEMAS, mapForModule, confidenceColor, ACCOUNT_TYPE_LABELS } from
 export default function SheetCard({ sheet, idx, engine, stockLocations, stockLocationsLoading, journals, journalsLoading, onChange }) {
   const [expanded, setExpanded] = useState(true);
   const [uploadState, setUploadState] = useState(null);
+  const [mappingInputs, setMappingInputs] = useState({});
+  const [mappingStatus, setMappingStatus] = useState({});
   const [accountTypeSelections, setAccountTypeSelections] = useState({});
 
   const schema = ODOO_SCHEMAS[sheet.analysis.moduleKey];
@@ -58,25 +60,53 @@ export default function SheetCard({ sheet, idx, engine, stockLocations, stockLoc
 
   async function doUpload() {
     setUploadState({ status: "checking" });
+    setMappingInputs({});
+    setMappingStatus({});
     const result = await engine.uploadSheetToOdoo(sheet, (partial) => setUploadState(partial));
     setUploadState(result);
+    if (result?.status === "confirm-account-type") seedAccountTypeSelections(result.missingAccounts);
+  }
+
+  function seedAccountTypeSelections(missingAccounts) {
+    const seeded = {};
+    for (const { name, suggested } of missingAccounts) seeded[name.toLowerCase()] = suggested;
+    setAccountTypeSelections(seeded);
+  }
+
+  // Shared by both confirm-* continuations below — runs the upload against
+  // an explicitly-built sheet object (rather than relying on the `sheet`
+  // prop having already re-rendered with the just-patched field by the
+  // time this runs) so the resumed call is guaranteed to see the choice
+  // that was just made.
+  async function runUpload(updatedSheet) {
+    setUploadState({ status: "checking" });
+    const result = await engine.uploadSheetToOdoo(updatedSheet, (partial) => setUploadState(partial));
+    setUploadState(result);
+    if (result?.status === "confirm-account-type") seedAccountTypeSelections(result.missingAccounts);
   }
 
   function confirmCreateAndContinue() {
+    const updatedSheet = { ...sheet, autoCreateProducts: true };
     patch({ autoCreateProducts: true });
-    setTimeout(doUpload, 0);
+    runUpload(updatedSheet);
   }
 
-  function confirmAccountTypesAndContinue() {
-    const missing = uploadState?.missingAccounts || [];
-    const choices = {};
-    missing.forEach((a) => {
-      const key = a.name.toLowerCase();
-      choices[key] = accountTypeSelections[key] || a.suggested;
-    });
-    patch({ accountTypeChoices: choices });
-    setAccountTypeSelections({});
-    setTimeout(doUpload, 0);
+  function confirmAccountTypeAndContinue() {
+    const updatedSheet = { ...sheet, accountTypeChoices: accountTypeSelections };
+    patch({ accountTypeChoices: accountTypeSelections });
+    runUpload(updatedSheet);
+  }
+
+  async function mapAndSave(label) {
+    const code = (mappingInputs[label] || "").trim();
+    if (!code) {
+      setMappingStatus((prev) => ({ ...prev, [label]: "enter a code first" }));
+      return;
+    }
+    setMappingStatus((prev) => ({ ...prev, [label]: "saving..." }));
+    const notesTmp = [];
+    const ok = await engine.saveExpenseJvMapping(label, code, notesTmp);
+    setMappingStatus((prev) => ({ ...prev, [label]: ok ? "saved — will apply on next import" : (notesTmp[0] || "save failed") }));
   }
 
   return (
@@ -256,7 +286,7 @@ export default function SheetCard({ sheet, idx, engine, stockLocations, stockLoc
               onClick={doUpload}
             >
               {uploadState?.status === "uploading" ? `Uploading ${uploadState.progress}/${uploadState.total}...`
-                : uploadState?.status === "checking" ? "Checking..."
+                : uploadState?.status === "checking" ? "Checking products..."
                 : "Upload to Odoo"}
             </button>
           </div>
@@ -280,38 +310,34 @@ export default function SheetCard({ sheet, idx, engine, stockLocations, stockLoc
           {uploadState?.status === "confirm-account-type" && (
             <>
               <div className="warn-box">
-                This sheet references {uploadState.missingAccounts.length} account(s) that don't exist in your Chart of Accounts yet. Pick the type for each — a starting guess is pre-selected based on which side (Debit/Credit) the amount is on and keywords in the name:
-                <table className="mapping-table" style={{ marginTop: 8 }}>
-                  <thead>
-                    <tr><th>Account name</th><th>Type</th></tr>
-                  </thead>
-                  <tbody>
-                    {uploadState.missingAccounts.map((a) => {
-                      const key = a.name.toLowerCase();
-                      const value = accountTypeSelections[key] || a.suggested;
-                      return (
-                        <tr key={key}>
-                          <td className="mono">{a.name}</td>
-                          <td>
-                            <select
-                              className="field-select"
-                              value={value}
-                              onChange={(e) => setAccountTypeSelections((prev) => ({ ...prev, [key]: e.target.value }))}
-                            >
-                              {Object.entries(ACCOUNT_TYPE_LABELS).map(([code, label]) => (
-                                <option key={code} value={code}>{label}</option>
-                              ))}
-                            </select>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                This sheet references {uploadState.missingAccounts.length} account(s) that don't exist in your Chart of Accounts yet. Pick the type for each one — a starting guess is pre-selected from which column (Debit/Credit) its amount landed in, but review it before continuing:
               </div>
+              <table className="confirm-account-type-table">
+                <thead>
+                  <tr><th>Account name</th><th>Type</th></tr>
+                </thead>
+                <tbody>
+                  {uploadState.missingAccounts.map(({ name }) => (
+                    <tr key={name}>
+                      <td>{name}</td>
+                      <td>
+                        <select
+                          className="module-select"
+                          value={accountTypeSelections[name.toLowerCase()] || ""}
+                          onChange={(e) => setAccountTypeSelections((prev) => ({ ...prev, [name.toLowerCase()]: e.target.value }))}
+                        >
+                          {Object.entries(ACCOUNT_TYPE_LABELS).map(([type, label]) => (
+                            <option key={type} value={type}>{label}</option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
               <div className="actions-row">
-                <button className="btn btn-primary" onClick={confirmAccountTypesAndContinue}>Create with these types & continue</button>
-                <button className="btn btn-secondary" onClick={() => { setUploadState(null); setAccountTypeSelections({}); }}>Cancel — I'll create/fix them in Odoo first</button>
+                <button className="btn btn-primary" onClick={confirmAccountTypeAndContinue}>Create with these types & continue</button>
+                <button className="btn btn-secondary" onClick={() => setUploadState(null)}>Cancel — I'll create/fix them in Odoo first</button>
               </div>
               <div className="note-box">These accounts are created with the type you pick here, a fresh unused code, and no other setup (no default taxes, no reconciliation flags beyond what the type implies) — review each one in Chart of Accounts afterward.</div>
             </>
@@ -321,15 +347,93 @@ export default function SheetCard({ sheet, idx, engine, stockLocations, stockLoc
             <>
               <div className="success-box">
                 ✅ {uploadState.result.created_count} of {uploadState.result.total} record(s) created.
-                {uploadState.result.duplicate_count > 0 && (
+                {uploadState.result.duplicate_count > 0 && !uploadState.result.existingMatches?.length && (
                   uploadState.result.duplicate_action === "skip"
                     ? ` ${uploadState.result.duplicate_count} skipped as duplicates.`
                     : ` ${uploadState.result.duplicate_count} existing record(s) matched — see notes below.`
                 )}
+                {uploadState.result.existingMatches?.length > 0 && ` ${uploadState.result.existingMatches.length} already existed — see below.`}
+                {uploadState.result.possibleDuplicates?.length > 0 && ` ${uploadState.result.possibleDuplicates.length} possible duplicate(s) — needs a human decision, see below.`}
+                {uploadState.result.blockedRows?.length > 0 && ` ${uploadState.result.blockedRows.length} skipped/blocked — see below.`}
                 {uploadState.result.failed_count > 0 && ` ${uploadState.result.failed_count} failed — see below.`}
               </div>
               {uploadState.result.notes.map((n, i) => <div key={i} className="note-box">ℹ️ {n}</div>)}
-              {uploadState.result.errors.map((e, i) => <div key={i} className="error-box">Row {e.row + 1}: {e.error}</div>)}
+
+              {/* Expense JV's own three outcome sections — kept separate
+                  because a human reacts to each differently: an existing
+                  match just needs acknowledging, a possible duplicate needs
+                  a real look before deciding skip-vs-delete-and-reimport,
+                  and a skipped/blocked row needs the mapping table or the
+                  sheet itself fixed and a re-run. */}
+              {uploadState.result.existingMatches?.length > 0 && (
+                <>
+                  <div className="section-heading">Already existing records</div>
+                  {uploadState.result.existingMatches.map((rec, i) => (
+                    <div key={i} className="note-box">Row {rec.row + 1} — Voucher "{rec.voucher}": {rec.detail}</div>
+                  ))}
+                </>
+              )}
+
+              {uploadState.result.possibleDuplicates?.length > 0 && (
+                <>
+                  <div className="section-heading">Possible duplicates — needs a human decision</div>
+                  {uploadState.result.possibleDuplicates.map((rec, i) => (
+                    <div key={i} className="error-box">Row {rec.row + 1} — Voucher "{rec.voucher}" (vendor "{rec.vendor}"): {rec.detail}</div>
+                  ))}
+                </>
+              )}
+
+              {uploadState.result.blockedRows?.length > 0 && (
+                <>
+                  <div className="section-heading">Skipped / blocked rows</div>
+                  {uploadState.result.blockedRows.map((rec, i) => (
+                    <div key={i} className="error-box">Row {rec.row + 1} — Voucher "{rec.voucher}": {rec.reason}</div>
+                  ))}
+                </>
+              )}
+
+              {/* Inline resolution for missing account mappings — saves
+                  straight into THIS database's mapping table (an
+                  ir.config_parameter, key
+                  "odoo_auto_import.expense_jv_account_map"), no code change
+                  or redeploy needed. Doesn't retry automatically — glance at
+                  what got saved, then re-click Upload once satisfied. */}
+              {uploadState.result.unresolvedMappingLabels?.length > 0 && (
+                <>
+                  <div className="section-heading">Map missing accounts</div>
+                  {uploadState.result.unresolvedMappingLabels.map((u, i) => (
+                    <div key={i} className="note-box">
+                      <div>
+                        "{u.label}" →{" "}
+                        <input
+                          type="text"
+                          placeholder="account code"
+                          style={{ width: 110, marginRight: 8 }}
+                          value={mappingInputs[u.label] ?? (u.suggestions?.length ? u.suggestions[0].code : "")}
+                          onChange={(e) => setMappingInputs((prev) => ({ ...prev, [u.label]: e.target.value }))}
+                        />
+                        <button className="btn btn-secondary" onClick={() => mapAndSave(u.label)}>Map & save</button>
+                        {mappingStatus[u.label] && <span style={{ marginLeft: 8 }}>{mappingStatus[u.label]}</span>}
+                      </div>
+                      {u.suggestions?.length > 0 && (
+                        <div className="note-box" style={{ fontSize: 12 }}>
+                          Suggestions: {u.suggestions.map((s) => `${s.code} ${s.name} (${s.type})`).join("; ")}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  <div className="note-box">Saved here, this table lives inside the Odoo database (System Parameter "odoo_auto_import.expense_jv_account_map"), not in this app — every teammate importing against this database sees it immediately.</div>
+                </>
+              )}
+
+              {uploadState.result.errors.length > 0 && (
+                <>
+                  {(uploadState.result.existingMatches?.length || uploadState.result.possibleDuplicates?.length || uploadState.result.blockedRows?.length) > 0 && (
+                    <div className="section-heading">Failed rows</div>
+                  )}
+                  {uploadState.result.errors.map((e, i) => <div key={i} className="error-box">Row {e.row + 1}: {e.error}</div>)}
+                </>
+              )}
             </>
           )}
         </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../lib/supabaseClient";
-import { createEngine, parseWorkbookFile, importGoogleSheet } from "../lib/odooEngine";
+import { createEngine, parseWorkbookFile, fetchGoogleSheet } from "../lib/odooEngine";
 import ConnectionForm from "../components/ConnectionForm";
 import SheetCard from "../components/SheetCard";
 import Header from "../components/Header";
@@ -67,23 +67,16 @@ export default function Dashboard() {
   }, [session, loadConnections]);
 
   // ---- connection management -------------------------------------------
-  // Saves the connection and returns the resulting record. Does NOT navigate —
-  // that happens separately (via handleSaved) once the form has had a chance
-  // to show a success confirmation.
   async function saveConnection(form) {
     if (editingConn?.id) {
       await authedFetch(`/api/connections/${editingConn.id}`, { method: "PUT", body: JSON.stringify(form) });
       await loadConnections();
-      return { ...editingConn, ...form };
+      activateConnection({ ...editingConn, ...form });
     } else {
       const { id } = await authedFetch("/api/connections", { method: "POST", body: JSON.stringify(form) });
       await loadConnections();
-      return { id, ...form };
+      activateConnection({ id, ...form });
     }
-  }
-
-  function handleSaved(conn) {
-    activateConnection(conn);
   }
 
   async function deleteConnection(id) {
@@ -141,27 +134,24 @@ export default function Dashboard() {
     }
   }
 
-  async function handleGoogleSheetImport() {
-    if (googleSheetLoading) return;
-    setGoogleSheetLoading(true);
-    setGoogleSheetError(null);
-    try {
-      const { sheets: built, fileName: gsName } = await importGoogleSheet(googleSheetUrl);
-      setFileName(gsName);
-      setSheets(built);
-      setGoogleSheetUrl("");
-    } catch (e) {
-      setGoogleSheetError(e.message || String(e));
-    } finally {
-      setGoogleSheetLoading(false);
-    }
-  }
-
   function resetFile() {
     setSheets([]);
     setFileName("");
-    setGoogleSheetUrl("");
+  }
+
+  async function handleGoogleSheetImport() {
+    setGoogleSheetLoading(true);
     setGoogleSheetError(null);
+    try {
+      const { sheets: built, fileName: gFileName } = await fetchGoogleSheet(googleSheetUrl);
+      setFileName(gFileName);
+      setSheets(built);
+      setGoogleSheetUrl("");
+    } catch (err) {
+      setGoogleSheetError(err.message || String(err));
+    } finally {
+      setGoogleSheetLoading(false);
+    }
   }
 
   function updateSheet(idx, updated) {
@@ -217,7 +207,6 @@ export default function Dashboard() {
         <ConnectionForm
           initial={editingConn}
           onSave={saveConnection}
-          onSaved={handleSaved}
           onCancel={() => setView(editingConn ? "main" : "databases")}
         />
       )}
@@ -247,17 +236,17 @@ export default function Dashboard() {
 
           {connectionStatus === "online" && !sheets.length && (
             <div className="google-sheet-import">
-              <div className="or-divider">or</div>
-              <div className="sub">Import from a Google Sheet (must be shared as "Anyone with the link")</div>
+              <div className="subtitle">Import from a Google Sheet (must be shared as "Anyone with the link")</div>
               <div className="google-sheet-row">
                 <input
                   type="text"
+                  className="module-select"
                   placeholder="Paste the Google Sheets URL..."
                   value={googleSheetUrl}
                   onChange={(e) => setGoogleSheetUrl(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !googleSheetLoading) handleGoogleSheetImport(); }}
                 />
-                <button className="btn btn-secondary" disabled={googleSheetLoading} onClick={handleGoogleSheetImport}>
+                <button className="btn btn-secondary" disabled={googleSheetLoading || !googleSheetUrl} onClick={handleGoogleSheetImport}>
                   {googleSheetLoading ? "Fetching..." : "Import"}
                 </button>
               </div>
